@@ -126,6 +126,46 @@ func (m *MIME) match(in []byte, readLimit uint32) *MIME {
 	return m.cloneHierarchy(charset)
 }
 
+// matchAll performs the same depth-first search as match and, in addition to
+// the primary result, reports the full path of matched nodes and the
+// conflicting signatures found along the way.
+//
+// The primary result is guaranteed to be identical to what match returns.
+// The path is the chain of nodes from m down to the primary result.
+// A conflict is recorded for every node, sibling of a node on the primary
+// path, whose detector also passes; conflicts are resolved to their own
+// deepest match and reported in tree order. Conflicts are informational only:
+// the first match in tree order always wins the primary verdict.
+func (m *MIME) matchAll(in []byte, readLimit uint32) (primary *MIME, path, conflicts []*MIME) {
+	primary = m.match(in, readLimit)
+	for p := primary; p != nil; p = p.parent {
+		path = append([]*MIME{p}, path...)
+	}
+
+	// Replay the descent match does: at each level the first matching child
+	// is on the primary path, any other matching child is a conflict.
+	node := m
+	for {
+		var selected *MIME
+		for _, c := range node.children {
+			if !c.detector(in, readLimit) {
+				continue
+			}
+			if selected == nil {
+				selected = c
+			} else {
+				conflicts = append(conflicts, c.match(in, readLimit))
+			}
+		}
+		if selected == nil {
+			break
+		}
+		node = selected
+	}
+
+	return primary, path, conflicts
+}
+
 // flatten transforms an hierarchy of MIMEs into a slice of MIMEs.
 func (m *MIME) flatten() []*MIME {
 	out := []*MIME{m} //nolint:prealloc

@@ -49,6 +49,28 @@ fmt.Println(mtype.String(), mtype.Extension())
 ```
 See the [runnable Go Playground examples](https://pkg.go.dev/github.com/gabriel-vasile/mimetype#pkg-overview).
 
+### Full detection: type path and conflicting signatures
+`Detect` returns a single MIME type. When the whole matched path and the
+losing signatures matter (for example, a polyglot file: an executable JAR
+masquerading as a plain ZIP, or a ZIP hiding an MP3 stream), use `Analyze`:
+```go
+d := mimetype.Analyze([]byte)
+// OR
+d, err := mimetype.AnalyzeReader(io.Reader)
+
+d.Primary()   // same verdict Detect returns
+d.Path()      // matched types, root "application/octet-stream" down to Primary()
+d.Conflicts() // other signatures that matched but lost, in tree order
+d.Truncated() // input was cut at the read limit (see SetLimit)
+d.IsFallback()// nothing matched, verdict is "application/octet-stream"
+```
+Selection rules: detectors run depth-first in tree order and the first match
+wins the primary verdict; other matching siblings are reported as conflicts
+but never change the verdict. When no child signature matches, the verdict is
+the deepest matched ancestor (a container with no known inner format is
+reported as the container itself). Detectors never see bytes past the read
+limit, so truncated input cannot be misreported as a more specific type.
+
 Caution: only use libraries like **mimetype** as a last resort. Content type detection
 using magic numbers is slow, inaccurate, and non-standard. Most of the times
 protocols have methods for specifying such metadata; e.g., `Content-Type` header
